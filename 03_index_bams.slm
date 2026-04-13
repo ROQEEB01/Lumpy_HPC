@@ -1,0 +1,64 @@
+#!/bin/bash
+# =============================================================================
+# 03_index_bams.slm
+# SLURM job: Indexes BAM files that are already coordinate-sorted.
+# Use this if your BAMs are sorted but missing .bai index files.
+# Submit with: sbatch 03_index_bams.slm
+# =============================================================================
+
+#SBATCH --account=<your-allocation>
+#SBATCH -t 0-90:00
+#SBATCH --cpus-per-task=4
+#SBATCH --mem-per-cpu=4G
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=<your-email>
+
+# Load required modules (adjust for your HPC environment)
+module load samtools/1.20
+
+# ---- Configuration (edit these) ----
+BAM_DIR="/path/to/your/working/directory/read_group"
+THREADS="${SLURM_CPUS_PER_TASK:-4}"
+
+echo "==========================================================="
+echo "BAM Indexing Job"
+echo "Directory: ${BAM_DIR}"
+echo "Threads:   ${THREADS}"
+echo "Started:   $(date)"
+echo "==========================================================="
+
+cd "${BAM_DIR}"
+
+total_files=0
+processed_files=0
+skipped_files=0
+
+shopt -s nullglob
+for bam in *.bam; do
+    ((total_files++))
+
+    echo "----------------------------------------"
+    echo "[$(date '+%H:%M:%S')] Processing ${bam} (${total_files})"
+
+    if [[ -f "${bam}.bai" ]]; then
+        echo "Index file already exists. Skipping."
+        ((skipped_files++))
+        continue
+    fi
+
+    echo " -> Indexing ${bam}"
+    if samtools index -@ "${THREADS}" "${bam}"; then
+        ((processed_files++))
+        echo "[$(date '+%H:%M:%S')] Successfully indexed ${bam}"
+    else
+        echo "[$(date '+%H:%M:%S')] ERROR: Failed to index ${bam}"
+    fi
+done
+
+echo "==========================================================="
+echo "Job Summary"
+echo "Total BAM files found:    ${total_files}"
+echo "Successfully processed:   ${processed_files}"
+echo "Skipped files:            ${skipped_files}"
+echo "Finished at:              $(date)"
+echo "==========================================================="

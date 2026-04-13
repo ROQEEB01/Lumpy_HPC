@@ -1,0 +1,81 @@
+#!/bin/bash
+# =============================================================================
+# 02_sort_index_bams.slm
+# SLURM job: Coordinate-sorts and indexes BAM files.
+# Submit with: sbatch 02_sort_index_bams.slm
+# =============================================================================
+
+#SBATCH --account=<your-allocation>
+#SBATCH -t 0-90:00
+#SBATCH --cpus-per-task=4
+#SBATCH --mem-per-cpu=4G
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=<your-email>
+
+# Load required modules (adjust for your HPC environment)
+module load samtools/1.20
+
+# ---- Configuration (edit these) ----
+BAM_DIR="/path/to/your/working/directory/read_group"
+THREADS="${SLURM_CPUS_PER_TASK:-4}"
+MEM_PER_THREAD="3G"
+
+echo "==========================================================="
+echo "BAM Sorting and Indexing Job"
+echo "Directory: ${BAM_DIR}"
+echo "Threads:   ${THREADS}"
+echo "Started:   $(date)"
+echo "==========================================================="
+
+cd "${BAM_DIR}"
+
+total_files=0
+processed_files=0
+skipped_files=0
+
+shopt -s nullglob
+for bam in *.bam; do
+    # Skip files that are already sorted
+    if [[ "${bam}" == *.sorted.bam ]]; then
+        echo "SKIPPING already sorted BAM: ${bam}"
+        ((skipped_files++))
+        continue
+    fi
+
+    ((total_files++))
+    sample="${bam%.bam}"
+    sorted="${sample}.sorted.bam"
+
+    echo "----------------------------------------"
+    echo "[$(date '+%H:%M:%S')] Processing ${bam} (${total_files})"
+
+    if [[ -f "${sorted}" && -f "${sorted}.bai" ]]; then
+        echo "Output files already exist. Skipping."
+        ((skipped_files++))
+        continue
+    fi
+
+    echo " -> Sorting to ${sorted}"
+    samtools sort -@ "${THREADS}" -m "${MEM_PER_THREAD}" -o "${sorted}" "${bam}"
+
+    echo " -> Indexing ${sorted}"
+    samtools index -@ "${THREADS}" "${sorted}"
+
+    echo " -> Verifying sorted BAM..."
+    if samtools quickcheck "${sorted}"; then
+        echo " -> Verification successful"
+        ((processed_files++))
+    else
+        echo "ERROR: Verification failed for ${sorted}. Keeping original BAM."
+    fi
+
+    echo "[$(date '+%H:%M:%S')] Completed ${bam}"
+done
+
+echo "==========================================================="
+echo "Job Summary"
+echo "Total BAM files found:    ${total_files}"
+echo "Successfully processed:   ${processed_files}"
+echo "Skipped files:            ${skipped_files}"
+echo "Finished at:              $(date)"
+echo "==========================================================="
